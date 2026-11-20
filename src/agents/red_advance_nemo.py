@@ -37,6 +37,8 @@ from agents.security_boundary import contains_secret, normalize_for_security
 from core.config import (
     DEMO_SECRETS,
     PROVIDER_GEMINI,
+    PROVIDER_OPENROUTER,
+    blue_client_kwargs,
     get_red_model,
     get_red_provider,
 )
@@ -229,6 +231,14 @@ def require_nemo():
 
 
 def _model_entry(provider: str, model: str) -> dict:
+    if provider == PROVIDER_OPENROUTER:
+        return {
+            "type": "main",
+            "engine": "openai",
+            "model": model,
+            "api_key_env_var": "OPENROUTER_API_KEY",
+            "parameters": {"base_url": blue_client_kwargs()["base_url"]},
+        }
     if provider == PROVIDER_GEMINI:
         return {
             "type": "main",
@@ -290,7 +300,7 @@ def build_rails_config(
         if "environment variable" in str(exc):
             raise RuntimeError(
                 "NeMo Guardrails của Red Advance cần API key Red trong môi trường "
-                "(OPENAI_API_KEY hoặc GOOGLE_API_KEY). Kiểm tra file .env."
+                "(OPENROUTER_API_KEY, OPENAI_API_KEY hoặc GOOGLE_API_KEY). Kiểm tra file .env."
             ) from exc
         raise
 

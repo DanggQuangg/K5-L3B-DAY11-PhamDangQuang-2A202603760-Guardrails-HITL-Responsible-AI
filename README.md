@@ -1,5 +1,7 @@
 # Day 11 — Controlled Agent Security (2026)
 
+**Học viên** Phạm Đăng Quang · **MSSV** `2A202603760` · **Lớp** K5-L3B
+
 > 👤 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).  
 > 🎯 **Mục tiêu:** đóng vai **Blue Team** để học cách xây Guardrails phòng thủ, rồi đóng vai **Red Team** để tấn công agent **Red** hoặc **Red Advance**.  
 > ✅ Làm theo **Checkpoint 1 → 5** trong [`CHECKPOINTS.md`](CHECKPOINTS.md) · nộp theo [`SUBMISSION.md`](SUBMISSION.md).
@@ -160,5 +162,36 @@ pip install -r requirements.txt
 
 Điền `.env`: `OPENROUTER_API_KEY` + `RED_TEAM_PROVIDER=openai|gemini` (và key tương ứng).  
 Rồi mở [`CHECKPOINTS.md`](CHECKPOINTS.md) và làm lần lượt Checkpoint 1 → 5.
+
+### Chạy phần phòng thủ Blue trên Windows
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 src/main.py --part 2
+.\.venv\Scripts\python.exe -X utf8 src/main.py --part 3
+.\.venv\Scripts\python.exe -X utf8 -m pytest tests/smoke tests/public -q
+```
+
+Checkpoint 3 dùng model Blue cho các câu vượt qua guardrails. Nhóm rate limit
+đo riêng số lượt được phép trước khi gọi model. Kết quả được ghi vào
+`outputs/results.json`, `outputs/audit_log.json` và `outputs/metrics.json`.
+Nếu OpenRouter tạm giới hạn lượt gọi, thêm `--offline` vào lệnh CP3 để kiểm tra
+guardrails bằng phản hồi mẫu. JSON ghi rõ `model_mode: "offline_fixture"`;
+chạy lại CP3 ở chế độ mặc định để lấy kết quả từ model thật.
+
+### Chạy CP3 với LFM3-1.7B trên Windows
+
+Đặt `llama-server.exe` và các DLL từ bản Windows CPU x64 của
+[llama.cpp](https://github.com/ggml-org/llama.cpp/releases) trong
+`.local-model/runtime/`. Đặt
+[`LFM3-1.7B-Q4_K_M.gguf`](https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/blob/main/LFM3-1.7B-Q4_K_M.gguf)
+trong `.local-model/`. Sau đó chạy từ gốc repo:
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 scripts/run_cp3_local.py
+```
+
+Script khởi động server ở `127.0.0.1:18083` và tắt server khi CP3 kết thúc.
+Kết quả local được ghi dưới `outputs/` với `model_mode: "local"`.
+Chế độ mặc định của bài lab vẫn là OpenRouter.
 
 Nộp theo [`SUBMISSION.md`](SUBMISSION.md) · Quy định: [`RULES.md`](RULES.md).

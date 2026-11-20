@@ -96,8 +96,8 @@ def create_red_agent_default():
     )
 
 
-def create_blue_agent(plugins: list):
-    """Blue — ALWAYS OpenRouter liquid/lfm-3-1.7b:free + student plugins."""
+def create_blue_agent(plugins: list, *, local: bool = False):
+    """Blue with student plugins and the selected LFM3-1.7B runtime."""
     from core.openai_runtime import create_blue_pair
 
     agent, runner = create_blue_pair(
@@ -105,11 +105,10 @@ def create_blue_agent(plugins: list):
         instruction=BLUE_INSTRUCTION,
         app_name="blue_agent",
         plugins=plugins,
+        local=local,
     )
-    print(
-        f"Blue created WITH guardrails! "
-        f"[Blue:{blue_provider_label()}]"
-    )
+    label = f"{runner.provider}:{runner.model}" if local else blue_provider_label()
+    print(f"Blue created WITH guardrails! [Blue:{label}]")
     return agent, runner
 
 

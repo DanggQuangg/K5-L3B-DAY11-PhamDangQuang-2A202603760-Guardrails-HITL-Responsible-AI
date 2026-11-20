@@ -51,7 +51,7 @@ async def part2_guardrails():
     print("(LLM-as-Judge / NeMo — optional, skipped)")
 
 
-async def part3_assignment_suite():
+async def part3_assignment_suite(*, offline: bool = False, local: bool = False):
     """Checkpoint 3: defense suite → outputs/results.json."""
     print("\n" + "=" * 60)
     print("CHECKPOINT 3: Assignment suite → outputs/*.json")
@@ -67,7 +67,9 @@ async def part3_assignment_suite():
         plugins = build_production_plugins(use_llm_judge=False)
         audit, monitor = build_observability()
         pipeline = {"plugins": plugins, "audit": audit, "monitor": monitor}
-        result = await run_assignment_suite(pipeline)
+        if offline:
+            print("Offline mode: use fixed model replies and run the real Blue guardrails.")
+        result = await run_assignment_suite(pipeline, offline=offline, local=local)
         print("Suite finished.")
         print("Wrote outputs under repo outputs/")
         return result
@@ -133,8 +135,9 @@ async def part4_attacks():
     }
 
 
-async def main(parts=None):
-    setup_api_key()
+async def main(parts=None, *, offline: bool = False, local: bool = False):
+    if not (offline or local):
+        setup_api_key()
 
     if parts is None:
         parts = [2, 3, 4]  # Core: CP2 → CP3 → CP4
@@ -143,7 +146,7 @@ async def main(parts=None):
         if part == 2:
             await part2_guardrails()
         elif part == 3:
-            await part3_assignment_suite()
+            await part3_assignment_suite(offline=offline, local=local)
         elif part == 4:
             await part4_attacks()
         else:
@@ -167,9 +170,14 @@ if __name__ == "__main__":
         choices=[2, 3, 4],
         help="2=CP2 guardrails · 3=CP3 suite · 4=CP4 red-team",
     )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--offline", action="store_true", help="CP3 only: use fixed model replies without an API key")
+    mode.add_argument("--local", action="store_true", help="CP3 only: use the local LFM3-1.7B server")
     args = parser.parse_args()
+    if (args.offline or args.local) and args.part != 3:
+        parser.error("--offline and --local require --part 3")
 
     if args.part:
-        asyncio.run(main(parts=[args.part]))
+        asyncio.run(main(parts=[args.part], offline=args.offline, local=args.local))
     else:
         asyncio.run(main())

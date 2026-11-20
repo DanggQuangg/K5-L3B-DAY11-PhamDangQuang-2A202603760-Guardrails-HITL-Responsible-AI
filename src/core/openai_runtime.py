@@ -20,6 +20,9 @@ from core.config import (
     red_openai_client_kwargs,
 )
 
+LOCAL_BLUE_MODEL = "lfm3-1.7b-local"
+LOCAL_BLUE_BASE_URL = "http://127.0.0.1:18083/v1"
+
 
 @dataclass
 class OpenAIAgent:
@@ -31,6 +34,12 @@ class OpenAIAgent:
 @dataclass
 class _MockInvocationContext:
     user_id: str = "student"
+
+
+@dataclass(frozen=True)
+class ChatResult:
+    text: str
+    blocked_by: str | None = None
 
 
 @dataclass
@@ -45,6 +54,7 @@ class OpenAIRunner:
     client_kwargs: dict = field(default_factory=dict)
     input_hooks: list[Callable[[str], str | None]] = field(default_factory=list)
     output_hooks: list[Callable[[str], str]] = field(default_factory=list)
+    response_generator: Callable[[str], str] | None = None
 
     def _client(self):
         from openai import OpenAI
@@ -52,16 +62,32 @@ class OpenAIRunner:
         return OpenAI(**(self.client_kwargs or {}))
 
     async def chat(self, agent: OpenAIAgent, user_message: str) -> str:
-        for hook in self.input_hooks:
-            blocked = hook(user_message)
-            if blocked:
-                return blocked
+        return (await self.chat_with_decision(agent, user_message)).text
 
-        block_msg = await self._run_input_plugins(user_message)
-        if block_msg is not None:
-            return block_msg
+    async def chat_with_decision(
+        self, agent: OpenAIAgent, user_message: str, *, user_id: str = "student",
+        max_tokens: int | None = None,
+    ) -> ChatResult:
+        """Return the final reply and which input layer stopped the request."""
+        blocked = await self.check_input(user_message, user_id=user_id)
+        if blocked is not None:
+            return blocked
 
+        if self.response_generator is None:
+            text = self._generate_text(agent, user_message, max_tokens=max_tokens)
+        else:
+            text = self.response_generator(user_message)
+
+        for hook in self.output_hooks:
+            text = hook(text)
+
+        return ChatResult(await self._run_output_plugins(text))
+
+    def _generate_text(
+        self, agent: OpenAIAgent, user_message: str, *, max_tokens: int | None
+    ) -> str:
         client = self._client()
+        generation_options = {"max_tokens": max_tokens} if max_tokens is not None else {}
         completion = client.chat.completions.create(
             model=self.model,
             messages=[
@@ -69,16 +95,17 @@ class OpenAIRunner:
                 {"role": "user", "content": user_message},
             ],
             temperature=self.temperature,
+            **generation_options,
         )
-        text = (completion.choices[0].message.content or "").strip()
+        return (completion.choices[0].message.content or "").strip()
 
-        for hook in self.output_hooks:
-            text = hook(text)
+    async def check_input(self, user_message: str, *, user_id: str = "student") -> ChatResult | None:
+        """Run pre-model checks and return the first blocking decision."""
+        for hook in self.input_hooks:
+            blocked = hook(user_message)
+            if blocked:
+                return ChatResult(blocked, "input_hook")
 
-        text = await self._run_output_plugins(text)
-        return text
-
-    async def _run_input_plugins(self, user_message: str) -> str | None:
         if not self.plugins:
             return None
         try:
@@ -90,7 +117,7 @@ class OpenAIRunner:
             role="user",
             parts=[types.Part.from_text(text=user_message)],
         )
-        ctx = _MockInvocationContext()
+        ctx = _MockInvocationContext(user_id=user_id)
         for plugin in self.plugins:
             cb = getattr(plugin, "on_user_message_callback", None)
             if cb is None:
@@ -103,7 +130,7 @@ class OpenAIRunner:
                 result = cb(invocation_context=ctx, user_message=user_content)
             if result is None:
                 continue
-            return _content_to_text(result)
+            return ChatResult(_content_to_text(result), getattr(plugin, "name", "input_plugin"))
         return None
 
     async def _run_output_plugins(self, text: str) -> str:
@@ -190,15 +217,19 @@ def create_blue_pair(
     input_hooks: list | None = None,
     output_hooks: list | None = None,
     temperature: float = 0.4,
+    local: bool = False,
 ) -> tuple[OpenAIAgent, OpenAIRunner]:
-    """Blue Team — always OpenRouter liquid/lfm-3-1.7b:free."""
+    """Build Blue with OpenRouter or the optional local LFM3-1.7B server."""
     return _make_pair(
         name=name,
         instruction=instruction,
         app_name=app_name,
-        model=get_blue_model(),
-        provider=get_blue_provider(),
-        client_kwargs=blue_client_kwargs(),
+        model=LOCAL_BLUE_MODEL if local else get_blue_model(),
+        provider="llama.cpp" if local else get_blue_provider(),
+        client_kwargs=(
+            {"base_url": LOCAL_BLUE_BASE_URL, "api_key": "local"}
+            if local else blue_client_kwargs()
+        ),
         plugins=plugins,
         input_hooks=input_hooks,
         output_hooks=output_hooks,
